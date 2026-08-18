@@ -23,8 +23,10 @@ Workdir layout:
 
 import argparse
 import getpass
+import os
 import json
 import re
+import shlex
 import statistics
 import subprocess
 import tempfile
@@ -86,6 +88,23 @@ TICKS = [
 QUOTED = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']{3,}'", re.S)
 
 
+def claude_argv() -> list[str]:
+    r"""The command that starts the CLI, as argv.
+
+    CLAUDE_BIN may hold a bare name, a path, or a full command with arguments
+    ("/usr/bin/python3 /opt/stub.py", "npx claude"). It is split with shlex in
+    Windows mode on Windows so a path like C:\tools\claude.exe survives, and in
+    POSIX mode elsewhere. Pointing at an explicit binary is the only reliable way
+    to redirect the CLI on Windows: subprocess resolves a bare name through the
+    PARENT process PATH, not through the environment handed to the child, so
+    prepending a directory to the child PATH changes nothing.
+    """
+    raw = os.environ.get("CLAUDE_BIN", "").strip()
+    if not raw:
+        return ["claude"]
+    return shlex.split(raw, posix=(os.name != "nt"))
+
+
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -118,7 +137,7 @@ def metrics(text: str) -> dict:
 def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
            clean: bool = False, effort: str = "medium", skills: bool = False) -> dict:
     cmd = [
-        "claude", "-p",
+        *claude_argv(), "-p",
         "--model", model,
         "--output-format", "json",
         # MCP is always off: otherwise you measure server instructions, not your prompt.

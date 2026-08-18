@@ -33,6 +33,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,23 @@ from pathlib import Path
 # the throwaway skill installed somewhere the agent never reads, and every probe
 # would report a false 0%.
 SKILLS_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude")) / "skills"
+
+
+def claude_argv() -> list[str]:
+    r"""The command that starts the CLI, as argv.
+
+    CLAUDE_BIN may hold a bare name, a path, or a full command with arguments
+    ("/usr/bin/python3 /opt/stub.py", "npx claude"). It is split with shlex in
+    Windows mode on Windows so a path like C:\tools\claude.exe survives, and in
+    POSIX mode elsewhere. Pointing at an explicit binary is the only reliable way
+    to redirect the CLI on Windows: subprocess resolves a bare name through the
+    PARENT process PATH, not through the environment handed to the child, so
+    prepending a directory to the child PATH changes nothing.
+    """
+    raw = os.environ.get("CLAUDE_BIN", "").strip()
+    if not raw:
+        return ["claude"]
+    return shlex.split(raw, posix=(os.name != "nt"))
 
 
 def parse_skill(skill_path: Path) -> tuple[str, str]:
@@ -92,7 +110,8 @@ def probe(query: str, description: str, model: str, timeout: int,
         # CLAUDECODE is dropped so `claude -p` can nest inside a Claude Code session.
         env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         proc = subprocess.run(
-            ["claude", "-p", query, "--output-format", "stream-json",
+            [*claude_argv(), "-p", query,
+             "--output-format", "stream-json",
              "--verbose", "--model", model, "--effort", "low"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(work), env=env, timeout=timeout,

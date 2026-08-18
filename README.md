@@ -141,11 +141,32 @@ Each was caught by a positive control rather than by reading the code: give the 
 
 ## Platforms
 
-Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude` CLI on `PATH`. No third-party packages.
+Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude` CLI. No third-party packages.
 
-Nothing here is written against a specific operating system: no shell invocation, no drive letters, no `.exe` names. Paths come from `tempfile.gettempdir()`, `Path.home()` and `Path(__file__)`, `CLAUDE_CONFIG_DIR` is honoured when set, every file is read and written as explicit UTF-8, and the scratch directory is namespaced per user so a shared `/tmp` does not collide.
+`tests/portability_test.py` runs the whole harness against a stub CLI, so it exercises the real code path, subprocess call included, without spending a token:
 
-Stated plainly, because the distinction matters: it is **portable by construction but has only been executed on Windows**. If you run it on macOS or Linux and something breaks, that is a real bug and worth an issue rather than a surprise.
+| Platform | Python | Result |
+|---|---|---|
+| Windows 11 | 3.14.0 | 13/13 pass |
+| Linux 6.6 (WSL2, Ubuntu) | 3.12.3 | 13/13 pass |
+| macOS | - | not executed |
+
+macOS is untested for the honest reason that no machine was available. It shares the POSIX path and encoding behaviour that Linux passed on, and the two regimes that actually differ, path separators and console encoding, are both covered above.
+
+```bash
+python tests/portability_test.py
+```
+
+### CLAUDE_BIN
+
+Set `CLAUDE_BIN` to point at a specific CLI, as a bare name, a path, or a full command:
+
+```bash
+CLAUDE_BIN="/opt/homebrew/bin/claude" python scripts/ab.py run v1
+CLAUDE_BIN="npx claude" python scripts/ab.py run v1
+```
+
+This is not decoration. On Windows `subprocess` resolves a bare command name through the **parent** process environment, so prepending a directory to the child's `PATH` redirects nothing, and an explicit binary is the only reliable way to aim the harness at a different CLI. The portability test depends on it.
 
 ## Licence
 
