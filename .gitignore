@@ -6,3 +6,6 @@ report.html
 article.md
 __pycache__/
 *.pyc
+
+# Session handoff notes: working state, never part of the published skill.
+.claude/
