@@ -139,6 +139,14 @@ Each was caught by a positive control rather than by reading the code: give the 
 
 `evals/evals.json` describes the behaviour a correct run should produce. It is a specification, not a passing result: those cases have not been executed.
 
+## Platforms
+
+Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude` CLI on `PATH`. No third-party packages.
+
+Nothing here is written against a specific operating system: no shell invocation, no drive letters, no `.exe` names. Paths come from `tempfile.gettempdir()`, `Path.home()` and `Path(__file__)`, `CLAUDE_CONFIG_DIR` is honoured when set, every file is read and written as explicit UTF-8, and the scratch directory is namespaced per user so a shared `/tmp` does not collide.
+
+Stated plainly, because the distinction matters: it is **portable by construction but has only been executed on Windows**. If you run it on macOS or Linux and something breaks, that is a real bug and worth an issue rather than a surprise.
+
 ## Licence
 
 MIT.

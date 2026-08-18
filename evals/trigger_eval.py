@@ -41,7 +41,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-SKILLS_DIR = Path.home() / ".claude" / "skills"
+# Honour CLAUDE_CONFIG_DIR: a user who relocated their config would otherwise get
+# the throwaway skill installed somewhere the agent never reads, and every probe
+# would report a false 0%.
+SKILLS_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude")) / "skills"
 
 
 def parse_skill(skill_path: Path) -> tuple[str, str]:

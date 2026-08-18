@@ -22,6 +22,7 @@ Workdir layout:
 """
 
 import argparse
+import getpass
 import json
 import re
 import statistics
@@ -62,7 +63,9 @@ BASELINE = "baseline"
 REFERENCE_ARMS = (BASELINE,)
 
 # Runs execute outside the project tree so no CLAUDE.md sneaks in through the cwd.
-NEUTRAL_CWD = Path(tempfile.gettempdir()) / "prompt-ab-cwd"
+# The directory is namespaced per user: on a shared Linux box a bare
+# /tmp/prompt-ab-cwd owned by someone else fails with a permission error.
+NEUTRAL_CWD = Path(tempfile.gettempdir()) / f"prompt-ab-cwd-{getpass.getuser()}"
 
 # Tic phrases. A hit means the system prompt failed to suppress them.
 TICKS = [
