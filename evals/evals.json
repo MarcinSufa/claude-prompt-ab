@@ -1,0 +1,40 @@
+{
+  "skill_name": "prompt-ab",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I read that adding a 'be concise, no preamble' rule to my CLAUDE.md makes Claude's answers shorter. I want to know whether that is actually true for my setup before I commit to it. Set this up and tell me.",
+      "expected_output": "A measurement, not an opinion. The agent creates a prompt-ab workdir, writes the candidate rule as a variant file, runs the baseline several times to establish a noise floor and the variant at least once, then reports a table whose delta is interpreted against that spread. It states explicitly whether the difference exceeds the noise.",
+      "files": [],
+      "expectations": [
+        "The agent runs the baseline more than once before comparing anything",
+        "The report interprets the delta against the baseline min..max spread rather than quoting a raw percentage as fact",
+        "The candidate rule is written to a variant file and appended, never used to overwrite or edit the user's CLAUDE.md",
+        "Effort is pinned to the same level on every arm",
+        "The agent points the user at report.html rather than only quoting numbers"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Here are two versions of my system prompt. Which one produces shorter answers?",
+      "expected_output": "Both versions are measured as separate arms against a shared baseline on one fixed task, with repeats on the baseline. The answer names which arm is shorter AND whether the gap clears the noise floor. Where a single run per variant is all that was measured, the result is labelled provisional.",
+      "files": [],
+      "expectations": [
+        "Both versions are measured, not judged by reading them",
+        "A single-run result is explicitly called provisional",
+        "The answer distinguishes visible-text tokens from reasoning tokens rather than comparing total output tokens"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Read these two draft answers I got from Claude and tell me which one is better written.",
+      "expected_output": "The agent answers the question directly by reading the two drafts. It does NOT spin up the harness: counters measure length, structure and banned phrases, and cannot rank quality. If it mentions prompt-ab at all, it is only to say the harness is the wrong instrument for a quality judgment.",
+      "files": [],
+      "expectations": [
+        "No workdir is created and no model runs are launched",
+        "The agent gives a direct qualitative comparison of the two drafts",
+        "If the harness is mentioned, it is explicitly ruled out as unsuitable for ranking quality"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+[
+  {
+    "query": "I read that adding a 'be concise, no preamble' rule to CLAUDE.md makes answers shorter. Does that actually work for my setup?",
+    "should_trigger": true,
+    "fixture": {
+      "CLAUDE.md": "# Project instructions\n\n- Use TypeScript strict mode.\n- Prefer composition over inheritance.\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": false
+  },
+  {
+    "query": "A/B these two system prompt versions in prompt-ab/variants and tell me which one produces shorter answers.",
+    "should_trigger": true,
+    "fixture": {
+      "prompt-ab/task.md": "Summarize this article for me.\n\n{ARTICLE}\n",
+      "prompt-ab/article.md": "Distributed systems fail in partial ways. A node can be slow rather than dead, and the difference matters more than most designs admit.\n",
+      "prompt-ab/variants/v1.md": "# Concise\n\n- Answer in under 200 words.\n",
+      "prompt-ab/variants/v2.md": "# Concise v2\n\n- Answer in under 100 words.\n- Use no headings.\n"
+    },
+    "trigger_rate": 1.0,
+    "pass": true
+  },
+  {
+    "query": "Before I adopt this prompt technique from the video, check whether it actually changes anything.",
+    "should_trigger": true,
+    "fixture": {
+      "CLAUDE.md": "# Project instructions\n\n- Run the test suite before every commit.\n",
+      "notes/technique.md": "Video claims: adding positive and negative pattern lists to the system prompt cuts output length noticeably.\n"
+    },
+    "trigger_rate": 1.0,
+    "pass": true
+  },
+  {
+    "query": "I added a rule to my system prompt yesterday. Measure whether it did anything.",
+    "should_trigger": true,
+    "fixture": {
+      "CLAUDE.md": "# Project instructions\n\n- Run the test suite before every commit.\n- Answer in under 200 words unless the question needs more.\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": false
+  },
+  {
+    "query": "Test this output style against my current one and show me the numbers.",
+    "should_trigger": true,
+    "fixture": {
+      "CLAUDE.md": "# Project instructions\n\n- Prefer small pull requests.\n",
+      "prompt-ab/variants/terse.md": "# Terse\n\n- Lead with the answer.\n- No preamble, no closing pleasantries.\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": false
+  },
+  {
+    "query": "Does this CLAUDE.md rule survive contact with a real task, or am I imagining the improvement?",
+    "should_trigger": true,
+    "fixture": {
+      "CLAUDE.md": "# Project instructions\n\n- State each fact once. Do not repeat yourself.\n"
+    },
+    "trigger_rate": 1.0,
+    "pass": true
+  },
+  {
+    "query": "Read these two draft answers and tell me which one is better written.",
+    "should_trigger": false,
+    "fixture": {
+      "draft-a.md": "The cache invalidation runs on every write, which is safe but slow.\n",
+      "draft-b.md": "Every write invalidates the cache. Safe, slow.\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": true
+  },
+  {
+    "query": "Write me a CLAUDE.md for this repository.",
+    "should_trigger": false,
+    "fixture": {
+      "package.json": "{\n  \"name\": \"demo\",\n  \"scripts\": { \"test\": \"vitest\" }\n}\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": true
+  },
+  {
+    "query": "Run the test suite and fix whatever fails.",
+    "should_trigger": false,
+    "fixture": {
+      "package.json": "{\n  \"name\": \"demo\",\n  \"scripts\": { \"test\": \"vitest\" }\n}\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": true
+  },
+  {
+    "query": "Summarize this article for me.",
+    "should_trigger": false,
+    "fixture": {
+      "article.md": "Distributed systems fail in partial ways. A node can be slow rather than dead.\n"
+    },
+    "trigger_rate": 0.0,
+    "pass": true
+  },
+  {
+    "query": "Which model should I use for this task, opus or sonnet?",
+    "should_trigger": false,
+    "trigger_rate": 0.0,
+    "pass": true
+  },
+  {
+    "query": "Explain what a system prompt is and how it differs from a user prompt.",
+    "should_trigger": false,
+    "trigger_rate": 0.0,
+    "pass": true
+  }
+]

@@ -1,0 +1,8 @@
+# Measurement workdirs: inputs and model outputs are yours, not the skill's.
+prompt-ab/
+runs/
+report.md
+report.html
+article.md
+__pycache__/
+*.pyc
