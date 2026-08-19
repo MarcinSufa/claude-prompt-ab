@@ -37,6 +37,10 @@ if "stream-json" in argv:
     name = os.path.basename(hits[-1]) if hits else "none"
     print(json.dumps({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "name": "Skill", "input": {"skill": name}}]}}))
+    # The behaviour eval reads the final answer off the result event. Saying
+    # draft-a satisfies its case 3, which is the case that asserts the agent
+    # answered WITHOUT running anything, so the stub can stand in for it.
+    print(json.dumps({"type": "result", "result": "draft-a is the tighter one."}))
 else:
     print(json.dumps({
         "result": ANSWER_JSON,
@@ -132,6 +136,21 @@ def main() -> int:
         check("trigger eval", r.returncode == 0 and "fired=100%" in r.stdout, r.stdout + r.stderr)
         leftovers = list(skills.glob("zz-trigger-*"))
         check("trigger eval cleans up after itself", not leftovers, str(leftovers))
+
+        # Behaviour eval, plumbing only: the stub answers as an agent that ran
+        # nothing, which is exactly case 3. This proves the transcript parsing,
+        # the fixture writing and the checks work here. It does not prove
+        # anything about a real agent, which is what the eval is for.
+        # The eval set is COPIED into the scratch tree first. behavior_eval writes
+        # its results next to the set it was given, so pointing at the repo copy
+        # would overwrite a real recorded run with stub output every time this
+        # test runs.
+        eset = tmp / "evals.json"
+        shutil.copy2(REPO / "evals" / "evals.json", eset)
+        r = run([sys.executable, str(REPO / "evals" / "behavior_eval.py"),
+                 "--eval-set", str(eset), "--case", "3"], env, REPO)
+        check("behavior eval", r.returncode == 0 and "passed 1/1" in r.stdout,
+              r.stdout + r.stderr)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

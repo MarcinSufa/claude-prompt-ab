@@ -1,39 +1,156 @@
 {
   "skill_name": "prompt-ab",
+  "note": "`expectations` is prose for a human reading this file. `checks` is what evals/behavior_eval.py asserts, from the transcript and the tree the agent left behind. Where an expectation has no check, it is documented but NOT measured. `harness_note` is appended to the prompt and exists because two rules the agent correctly follows make a headless case unrunnable: it refuses to report numbers from a model it can tell is a fixture (it went as far as overriding CLAUDE_BIN to reach the real binary), and it stops at a cost gate waiting for a confirmation no headless run can give. The note removes both blocks and nothing else. Run with --no-note to drop it and pay for a real measurement instead.",
   "evals": [
     {
       "id": 1,
       "prompt": "I read that adding a 'be concise, no preamble' rule to my CLAUDE.md makes Claude's answers shorter. I want to know whether that is actually true for my setup before I commit to it. Set this up and tell me.",
       "expected_output": "A measurement, not an opinion. The agent creates a prompt-ab workdir, writes the candidate rule as a variant file, runs the baseline several times to establish a noise floor and the variant at least once, then reports a table whose delta is interpreted against that spread. It states explicitly whether the difference exceeds the noise.",
-      "files": [],
+      "files": {
+        "CLAUDE.md": "# Project instructions\n\n- Use the existing helpers before writing new ones.\n- Match the style of the surrounding code.\n"
+      },
       "expectations": [
         "The agent runs the baseline more than once before comparing anything",
         "The report interprets the delta against the baseline min..max spread rather than quoting a raw percentage as fact",
         "The candidate rule is written to a variant file and appended, never used to overwrite or edit the user's CLAUDE.md",
         "Effort is pinned to the same level on every arm",
         "The agent points the user at report.html rather than only quoting numbers"
-      ]
+      ],
+      "checks": [
+        {
+          "kind": "min_runs",
+          "arm": "baseline",
+          "n": 2
+        },
+        {
+          "kind": "min_arms",
+          "n": 1
+        },
+        {
+          "kind": "variant_file"
+        },
+        {
+          "kind": "claude_md_untouched"
+        },
+        {
+          "kind": "fixture_unchanged",
+          "path": "CLAUDE.md"
+        },
+        {
+          "kind": "effort_uniform"
+        },
+        {
+          "kind": "answer_matches",
+          "any": [
+            "noise",
+            "spread",
+            "min\\.\\.max",
+            "variance",
+            "range of the baseline"
+          ]
+        },
+        {
+          "kind": "answer_matches",
+          "any": [
+            "report\\.html"
+          ]
+        }
+      ],
+      "harness_note": "Environment note for this run: the CLI the harness shells out to is a fixture. It answers instantly, costs nothing and its answers are synthetic but well formed, so there is no spend to confirm and no one to confirm it with, this session is non-interactive. Leave CLAUDE_BIN as it is, do not point the harness at the real binary, and carry the measurement through to the report. Read and report the numbers exactly as you would real ones, saying once that the model behind them was a fixture."
     },
     {
       "id": 2,
-      "prompt": "Here are two versions of my system prompt. Which one produces shorter answers?",
+      "prompt": "Here are two versions of my system prompt, prompt-a.md and prompt-b.md. Which one produces shorter answers?",
       "expected_output": "Both versions are measured as separate arms against a shared baseline on one fixed task, with repeats on the baseline. The answer names which arm is shorter AND whether the gap clears the noise floor. Where a single run per variant is all that was measured, the result is labelled provisional.",
-      "files": [],
+      "files": {
+        "prompt-a.md": "# Style\n\n- Answer thoroughly. Explain your reasoning before the conclusion.\n- Use headings to organise anything with more than one part.\n",
+        "prompt-b.md": "# Style\n\n- Answer in under 200 words unless the question needs more.\n- Lead with the conclusion. No preamble, no summary of what you just said.\n"
+      },
       "expectations": [
         "Both versions are measured, not judged by reading them",
         "A single-run result is explicitly called provisional",
         "The answer distinguishes visible-text tokens from reasoning tokens rather than comparing total output tokens"
-      ]
+      ],
+      "checks": [
+        {
+          "kind": "min_runs",
+          "arm": "baseline",
+          "n": 2
+        },
+        {
+          "kind": "min_arms",
+          "n": 2
+        },
+        {
+          "kind": "claude_md_untouched"
+        },
+        {
+          "kind": "fixture_unchanged",
+          "path": "prompt-a.md"
+        },
+        {
+          "kind": "fixture_unchanged",
+          "path": "prompt-b.md"
+        },
+        {
+          "kind": "provisional_if_single",
+          "any": [
+            "provisional",
+            "single run",
+            "n=1",
+            "one run"
+          ]
+        },
+        {
+          "kind": "answer_matches",
+          "any": [
+            "visible[ -]text",
+            "visible tokens",
+            "reasoning token"
+          ]
+        }
+      ],
+      "harness_note": "Environment note for this run: the CLI the harness shells out to is a fixture. It answers instantly, costs nothing and its answers are synthetic but well formed, so there is no spend to confirm and no one to confirm it with, this session is non-interactive. Leave CLAUDE_BIN as it is, do not point the harness at the real binary, and carry the measurement through to the report. Read and report the numbers exactly as you would real ones, saying once that the model behind them was a fixture."
     },
     {
       "id": 3,
-      "prompt": "Read these two draft answers I got from Claude and tell me which one is better written.",
+      "prompt": "Read these two draft answers I got from Claude, draft-a.md and draft-b.md, and tell me which one is better written.",
       "expected_output": "The agent answers the question directly by reading the two drafts. It does NOT spin up the harness: counters measure length, structure and banned phrases, and cannot rank quality. If it mentions prompt-ab at all, it is only to say the harness is the wrong instrument for a quality judgment.",
-      "files": [],
+      "files": {
+        "draft-a.md": "The pooler wedges under burst load, so the ledger read hangs and the page never paints. Cap the burst in front of the cron trigger and the symptom goes away.\n",
+        "draft-b.md": "It is worth noting that, at the end of the day, database connection pooling can potentially become a significant bottleneck in certain high-traffic scenarios. There are a number of approaches one might consider taking in order to address this.\n"
+      },
       "expectations": [
         "No workdir is created and no model runs are launched",
         "The agent gives a direct qualitative comparison of the two drafts",
         "If the harness is mentioned, it is explicitly ruled out as unsuitable for ranking quality"
+      ],
+      "checks": [
+        {
+          "kind": "no_workdir"
+        },
+        {
+          "kind": "no_model_runs"
+        },
+        {
+          "kind": "claude_md_untouched"
+        },
+        {
+          "kind": "fixture_unchanged",
+          "path": "draft-a.md"
+        },
+        {
+          "kind": "fixture_unchanged",
+          "path": "draft-b.md"
+        },
+        {
+          "kind": "answer_matches",
+          "any": [
+            "draft-a",
+            "draft a",
+            "the first"
+          ]
+        }
       ]
     }
   ]

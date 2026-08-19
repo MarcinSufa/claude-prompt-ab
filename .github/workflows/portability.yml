@@ -1,0 +1,28 @@
+name: portability
+
+# The suite drives the whole harness against a stub CLI, so it needs no API key,
+# no `claude` binary and no secrets. That is what makes it runnable in CI at all.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  portability:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # The floor and the ceiling: 3.10 is the oldest the code parses on
+        # (it uses `X | None` annotations), 3.13 is the newest runner image.
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: portability suite
+        run: python tests/portability_test.py

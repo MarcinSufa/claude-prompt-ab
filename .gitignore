@@ -9,3 +9,6 @@ __pycache__/
 
 # Session handoff notes: working state, never part of the published skill.
 .claude/
+
+# Behaviour-eval output: full agent transcripts and absolute local paths.
+evals/behavior-results.json

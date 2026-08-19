@@ -137,7 +137,25 @@ The script exists because the one shipped with `skill-creator` could not produce
 
 Each was caught by a positive control rather than by reading the code: give the harness something that cannot fail to trigger, and see whether the number moves. It did not, three times, and each stall named a different bug.
 
-`evals/evals.json` describes the behaviour a correct run should produce. It is a specification, not a passing result: those cases have not been executed.
+### Behaviour eval
+
+`evals/evals.json` describes the behaviour a correct run should produce, and `evals/behavior_eval.py` executes it:
+
+```bash
+python evals/behavior_eval.py                  # all cases
+python evals/behavior_eval.py --case 3         # one case
+```
+
+Each case runs one real agent session over the case prompt. The model calls made *inside* the harness go to a stub, so a case costs one session rather than a session plus a full measurement. Nothing is graded by a model: every check reads the transcript (which flags the agent passed, which skill it invoked) or the tree it left behind (how many runs landed under each arm, whether a variant file was written, whether any `CLAUDE.md` changed). Where a case's prose expectation has no matching check, it is documented but not measured, and the output says so by printing checks against expectations.
+
+Result on Windows 11, opus, one run per case: **3/3**.
+
+Two things had to be fixed before that number meant anything, and both were found by the agent behaving *better* than the eval assumed:
+
+- The stub first returned one canned answer for every arm. The agent noticed six byte-identical runs, called the measurement fake and refused to report it, then overrode `CLAUDE_BIN` to reach the real binary. The stub now reads each arm's system prompt, shortens its answer when that prompt asks for brevity, and jitters length per call, so the baseline has a spread to interpret.
+- The `provisional` expectation is conditional in prose (a single run per variant must be labelled provisional) and was coded unconditionally, which failed an agent that had repeated every arm five times. `provisional_if_single` now only demands the word when a single run is all there was.
+
+A case may also carry a `harness_note`, appended to its prompt. It exists because two rules the agent correctly follows make a headless case unrunnable: it will not report numbers from a model it can tell is a fixture, and it stops at a cost gate waiting for a confirmation no headless run can give. Pass `--no-note` to drop it and pay for a real measurement instead.
 
 ## Platforms
 
@@ -147,8 +165,8 @@ Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude
 
 | Platform | Python | Result |
 |---|---|---|
-| Windows 11 | 3.14.0 | 13/13 pass |
-| Linux 6.6 (WSL2, Ubuntu) | 3.12.3 | 13/13 pass |
+| Windows 11 | 3.14.0 | 14/14 pass |
+| Linux 6.6 (WSL2, Ubuntu) | 3.12.3 | 14/14 pass |
 | macOS | - | not executed |
 
 macOS is untested for the honest reason that no machine was available. It shares the POSIX path and encoding behaviour that Linux passed on, and the two regimes that actually differ, path separators and console encoding, are both covered above.
