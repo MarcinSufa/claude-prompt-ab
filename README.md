@@ -163,13 +163,15 @@ Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude
 
 `tests/portability_test.py` runs the whole harness against a stub CLI, so it exercises the real code path, subprocess call included, without spending a token:
 
-| Platform | Python | Result |
-|---|---|---|
-| Windows 11 | 3.14.0 | 14/14 pass |
-| Linux 6.6 (WSL2, Ubuntu) | 3.12.3 | 14/14 pass |
-| macOS | - | not executed |
+| Platform | Python | Result | Where |
+|---|---|---|---|
+| Windows 11 | 3.14.0 | 14/14 pass | local |
+| Linux 6.6 (WSL2, Ubuntu) | 3.12.3 | 14/14 pass | local |
+| macOS (Darwin 25.5, arm64) | 3.10.11, 3.13.14 | 14/14 pass | CI |
+| Ubuntu 24.04 | 3.10.20, 3.13.15 | 14/14 pass | CI |
+| Windows Server 2025 | 3.10.11, 3.13.15 | 14/14 pass | CI |
 
-macOS is untested for the honest reason that no machine was available. It shares the POSIX path and encoding behaviour that Linux passed on, and the two regimes that actually differ, path separators and console encoding, are both covered above.
+macOS was untested for a while because no machine was available. It is now covered by `.github/workflows/portability.yml`, which runs the suite on all three operating systems at both ends of the supported Python range on every push. The suite needs no API key and no `claude` binary, which is what makes it runnable in CI at all.
 
 ```bash
 python tests/portability_test.py
