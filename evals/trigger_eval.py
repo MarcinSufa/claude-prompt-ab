@@ -78,7 +78,7 @@ def parse_skill(skill_path: Path) -> tuple[str, str]:
         raise SystemExit(f"no frontmatter in {skill_path / 'SKILL.md'}")
     block = fm.group(1)
     name = re.search(r"^name:\s*(.+)$", block, re.M)
-    desc = re.search(r"^description:\s*(.+?)(?=\n\w+:|\Z)", block, re.M | re.S)
+    desc = re.search(r"^description:\s*(.+?)(?=\n[\w-]+:|\Z)", block, re.M | re.S)
     if not (name and desc):
         raise SystemExit("frontmatter needs both name and description")
     return name.group(1).strip(), desc.group(1).strip().strip("'\"")
