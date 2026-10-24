@@ -16,11 +16,20 @@ This is the cheap, deterministic counterpart. No judge, no containers, no scorin
 
 ## Install
 
+As a plugin:
+
+```bash
+claude plugin marketplace add MarcinSufa/claude-prompt-ab
+claude plugin install prompt-ab@claude-prompt-ab
+```
+
+Or as a bare personal skill:
+
 ```bash
 git clone https://github.com/MarcinSufa/claude-prompt-ab ~/.claude/skills/prompt-ab
 ```
 
-Claude Code picks up `~/.claude/skills/*/SKILL.md` automatically. Requirements: Python 3.10+ and the `claude` CLI on `PATH`. No third-party packages.
+Both load the same root `SKILL.md`: the plugin manifest points its skills at the repository root (`"skills": "./"`), so the clone layout and the plugin layout are one tree. Claude Code picks up `~/.claude/skills/*/SKILL.md` automatically. Requirements: Python 3.10+ (`python3`) and the `claude` CLI on `PATH`. No third-party packages.
 
 ## Quick start
 
