@@ -1,0 +1,22 @@
+{
+  "name": "prompt-ab",
+  "version": "1.0.0",
+  "description": "A/B harness for prompt-layer changes: runs one fixed task through each system-prompt / CLAUDE.md variant with claude -p, measures the noise floor first, counts what changed and renders every answer side by side with a prompt diff.",
+  "author": {
+    "name": "Marcin Sufa",
+    "email": "sufa.marcin@gmail.com"
+  },
+  "homepage": "https://github.com/MarcinSufa/claude-prompt-ab",
+  "repository": "https://github.com/MarcinSufa/claude-prompt-ab",
+  "license": "MIT",
+  "skills": "./",
+  "keywords": [
+    "prompt",
+    "system-prompt",
+    "claude-md",
+    "a-b-test",
+    "eval",
+    "noise-floor",
+    "measurement"
+  ]
+}

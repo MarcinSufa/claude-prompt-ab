@@ -1,6 +1,7 @@
 ---
 name: prompt-ab
-description: 'Use this skill whenever the user wants to know whether a change to a system prompt, CLAUDE.md, AGENTS.md or output style actually changed the model output, even if they do not ask for a measurement. Trigger on "A/B this prompt", "test my system prompt", "compare these CLAUDE.md versions", "does this rule actually work", "measure whether this prompt change did anything", "is this technique worth adopting", "prove this prompt helps", and on any request to adopt a prompt rule from an article, video or colleague. Also trigger when the user is about to edit CLAUDE.md and wonders whether it is worth it. It runs one fixed task through each prompt variant headlessly, counts what changed (visible-text tokens, reasoning tokens, tic phrases, em dashes, structure, reference codes), measures the model noise floor first so a random difference is never reported as an effect, and renders every answer side by side with a prompt diff. Do NOT use it to judge which answer is better written: counters cannot rank quality.'
+description: 'Use whenever the user wants to know whether a change to a system prompt, CLAUDE.md, AGENTS.md or output style actually changed the model output, even if they do not ask for a measurement. Trigger on "A/B this prompt", "test my system prompt", "compare these CLAUDE.md versions", "does this rule actually work", "is this technique worth adopting", in Polish on "przetestuj ten prompt A/B", "czy ta zmiana w CLAUDE.md coś zmieniła", "porównaj dwie wersje promptu", on any request to adopt a prompt rule from an article, video or colleague, and when the user is about to edit CLAUDE.md and wonders whether it is worth it. It runs one fixed task through each prompt variant headlessly, measures the noise floor first so a random difference is never reported as an effect, counts what changed (visible text, reasoning, tics, em dashes, structure, reference codes) and renders every answer side by side with a prompt diff. Do NOT use it to judge which answer is better written: counters cannot rank quality.'
+argument-hint: '[variant name | vanilla | report]'
 ---
 
 # prompt-ab
@@ -26,7 +27,7 @@ So the harness always measures a noise floor before it reports a difference.
 
 ## Procedure
 
-1. **Pick the workdir.** Default `./prompt-ab`, override with `--workdir`. The skeleton is created on first run.
+1. **Pick the workdir.** Use `./prompt-ab` in the user's project and always pass it as `--workdir`, before the subcommand. Without it the workdir is `./prompt-ab` under whatever directory the command runs in. The skeleton is created on first run.
 
 2. **Write `task.md`.** The user prompt, with `{ARTICLE}` where the input text goes. Put the input in `article.md`.
 
@@ -34,15 +35,17 @@ So the harness always measures a noise floor before it reports a difference.
 
 3. **Write `variants/<name>.md`.** Each file is appended via `--append-system-prompt-file`, on top of whatever `CLAUDE.md` is already loaded. Variants add; they never replace.
 
-4. **Run.** Baseline (no appended file) is computed once with repeats and cached. Each variant costs one call per iteration.
+4. **Run.** Baseline (no appended file) is computed once with repeats and cached. Each variant costs one call per iteration. Every call is a real `claude -p` run: it spends the user's quota.
 
    ```bash
-   python scripts/ab.py run v1 --ref-repeat 3 --repeat 1
-   python scripts/ab.py run v2 --repeat 1
-   python scripts/ab.py diff baseline v1 v2
+   python3 "${CLAUDE_SKILL_DIR}/scripts/ab.py" --workdir ./prompt-ab run v1 --ref-repeat 3 --repeat 1
+   python3 "${CLAUDE_SKILL_DIR}/scripts/ab.py" --workdir ./prompt-ab run v2 --repeat 1
+   python3 "${CLAUDE_SKILL_DIR}/scripts/ab.py" --workdir ./prompt-ab diff baseline v1 v2
    ```
 
-5. **Read the noise floor first.** The `rozrzut` column is baseline min..max. Any variant inside that band is indistinguishable from randomness, no matter how good the percentage looks.
+   On Windows use `python` or `py -3` in place of `python3`.
+
+5. **Read the noise floor first.** The `spread` column is each arm's own min..max over its runs. The **baseline row's** spread is the noise floor: a variant whose `text tok` median falls inside it is indistinguishable from randomness, no matter how good the percentage looks. A variant's own spread says how stable that variant is; with one run it reads `n=1`, so treat that result as provisional.
 
 6. **Read the answers, not only the table.** `report.html` renders every variant side by side. The table says what changed; only the text says whether you want it.
 
@@ -52,7 +55,7 @@ These are the reason this skill exists. The script is replaceable; this list is 
 
 1. **Pin `--effort` explicitly on every arm.** Otherwise you measure reasoning, not prompt. Measured: the same setup produced 1600 tokens of reasoning at `xhigh` against 384 at default, while emitting *less* visible text. If one arm inherits `settings.json` and another does not, the comparison is worthless.
 
-2. **`--setting-sources project` is the only thing that cuts `CLAUDE.md`** (both global and project). Verified by probe: without it the agent answers yes to "do your instructions contain <word from CLAUDE.md>", with it, no. But it also drops `settings.json`, which silently changes effort. That is two variables, so a "vanilla" arm is not comparable to a "baseline" arm unless effort is pinned on both.
+2. **`--setting-sources project` is the only thing that cuts `CLAUDE.md`** (both global and project). Verified by probe: without it the agent answers yes to "do your instructions contain <word from CLAUDE.md>", with it, no. But it also drops `settings.json`, which silently changes effort. That is two variables, so a "vanilla" arm is not comparable to a "baseline" arm unless effort is pinned on both. `run vanilla` passes this flag and the same explicit `--effort` as the baseline; each run records its effort, and a cached arm measured at another level is flagged.
 
 3. **`output_tokens` is not answer length.** It bundles reasoning. Split it: estimate visible-text tokens from the text itself and treat the remainder as reasoning. A variant can cut visible text while raising total tokens.
 
@@ -82,23 +85,25 @@ These are the reason this skill exists. The script is replaceable; this list is 
 | `run <variant> --repeat N` | N iterations of the variant |
 | `run <variant> --ref-repeat N` | N iterations of baseline; this sets the noise floor |
 | `run <variant> --force-base` | Discards the cached baseline and recomputes |
-| `run vanilla` | Reference arm with no `CLAUDE.md` at all, for diagnosis |
+| `run <variant> --with-skills` | Leaves skills enabled: real working conditions, not the prompt alone |
+| `run vanilla` | Built-in reference arm with no `CLAUDE.md` at all, for diagnosis. Needs no variant file; runs `--repeat` times with `--setting-sources project` and nothing appended |
 | `diff <a> <b> ...` | Table for the named arms only |
 | `report [names...]` | Rebuilds `report.md` and `report.html` |
-| `--workdir PATH` | Workdir; default `./prompt-ab` |
-| `--effort LEVEL` | `low`/`medium`/`high`/`xhigh`/`max`, pinned on every arm |
-| `--model NAME` | Default `opus` |
+
+Options: `--workdir PATH` (default `./prompt-ab`) goes **before** the subcommand. `--effort LEVEL` (`low`/`medium`/`high`/`xhigh`/`max`, default `medium`, pinned on every arm), `--model NAME` (default `opus`) and `--timeout SECONDS` (default 600 per call) go **after** `run`.
 
 ## Output
 
 | Column | Meaning |
 |---|---|
-| `tekst tok` | Estimated tokens of visible answer text |
-| `rozrzut` | Baseline min..max, the noise floor; read this before any delta |
+| `n` | Runs of that arm |
+| `text tok` | Estimated tokens of visible answer text (characters / 4), median |
+| `spread` | That arm's min..max of `text tok`. The baseline row is the noise floor; read it before any delta |
 | `vs baseline` | Change in visible text against the current setup |
-| `myslenie` | Total output tokens minus visible text, so reasoning |
-| `em dash`, `tiki` | Style counters; tics discount quoted spans |
-| `ref kody` | Distinct `F1`/`D1`/`R1`-style codes emitted |
+| `thinking` | Total output tokens minus estimated visible text, so roughly reasoning. An estimate: it can come out slightly negative on short answers |
+| `em dash`, `tics` | Style counters; tics discount quoted spans |
+| `ref codes` | Distinct `F1`/`D1`/`R1`-style codes emitted |
+| `time` | Median CLI-reported duration |
 
 `report.html` carries the table plus every answer rendered side by side, in light and dark. Each column keeps its name **and its metrics** pinned while the answer scrolls, so a number is never read against the wrong variant.
 
@@ -107,12 +112,12 @@ It also records what produced the numbers, which is what makes the file readable
 - One panel at the top holds the shared input: `task.md` in full and the head of `article.md` with its word count.
 - Each column holds the exact system prompt behind it, with size in characters and tokens. Reference arms say so explicitly rather than showing nothing, so "no appended prompt" is distinguishable from "prompt missing".
 
-`report.md` carries the same content with answers fenced as source.
+`report.md` carries the same content with answers fenced as source. Both show the run nearest the median per arm and say which one it is (`run 2/3`).
 
 ## Isolation
 
-Runs execute outside the project tree with `--strict-mcp-config` and `--disable-slash-commands`, so no MCP server and no skill contributes to the measurement. The loaded `CLAUDE.md` stays in place on every arm by design: the question is normally "does this addition beat what I already have", not "what would a bare model do".
+Runs execute outside the project tree with `--strict-mcp-config` and `--disable-slash-commands`, so no MCP server and no skill contributes to the measurement. The loaded `CLAUDE.md` stays in place on every arm except `vanilla` by design: the question is normally "does this addition beat what I already have", not "what would a bare model do".
 
 ## Requirements
 
-Python 3.10+ and the `claude` CLI on PATH. No third-party packages.
+Python 3.10+ (`python3`) and the `claude` CLI on PATH. No third-party packages. Installed as a plugin or cloned into `~/.claude/skills/prompt-ab`; either way the script is `${CLAUDE_SKILL_DIR}/scripts/ab.py`.

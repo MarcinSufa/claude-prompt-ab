@@ -9,10 +9,17 @@ registers the candidate description as a SLASH COMMAND under
 positive control: a description reading "ALWAYS invoke this skill for every single
 user request without exception" still scored 0%.
 
-This version installs a real skill at `~/.claude/skills/<tmp>/SKILL.md`, which is
-what the `Skill` tool actually reads. Verified by positive control in the other
-direction: a skill holding a secret word the query asks for is invoked as
-`Skill({"skill": "<tmp>"})` and the answer comes back from the skill body.
+This version installs a real skill, which is what the `Skill` tool actually
+reads. Verified by positive control in the other direction (with the skill under
+`~/.claude/skills/<tmp>/`): a skill holding a secret word the query asks for is
+invoked as `Skill({"skill": "<tmp>"})` and the answer comes back from the skill body.
+
+Where it installs: as a PROJECT skill, `<probe cwd>/.claude/skills/<tmp>/SKILL.md`,
+inside the throwaway directory each probe already runs in. Nothing is written to
+the user's `~/.claude/skills`, so a killed run cannot leave a stray skill behind
+that every later session would load. A temporary HOME or CLAUDE_CONFIG_DIR is not
+an option: the CLI honours both, but then it finds no login (`claude auth status`
+reports loggedIn false), every probe fails and the eval reports a false 0%.
 
 One caveat the numbers cannot fix: a model reaches for a skill when the skill is
 USEFUL for the request, not when its description shouts. An emphatic description on
@@ -21,8 +28,8 @@ rate as "this description does not promise something these queries need", never 
 "the model is ignoring instructions".
 
 Usage:
-    python trigger_eval.py --skill-path ../  --eval-set trigger-set.json
-    python trigger_eval.py --skill-path ../  --eval-set trigger-set.json --runs 3
+    python3 trigger_eval.py --skill-path ../  --eval-set trigger-set.json
+    python3 trigger_eval.py --skill-path ../  --eval-set trigger-set.json --runs 3
 
 Eval set format: a JSON list of
     {"query": str, "should_trigger": bool, "fixture": {"rel/path": "contents"}}
@@ -42,10 +49,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-# Honour CLAUDE_CONFIG_DIR: a user who relocated their config would otherwise get
-# the throwaway skill installed somewhere the agent never reads, and every probe
-# would report a false 0%.
-SKILLS_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude")) / "skills"
+# Set by a parent Claude Code session; dropped so `claude -p` can nest inside one.
+NESTED_SESSION_VARS = ("CLAUDECODE",)
 
 
 def claude_argv() -> list[str]:
@@ -73,7 +78,7 @@ def parse_skill(skill_path: Path) -> tuple[str, str]:
         raise SystemExit(f"no frontmatter in {skill_path / 'SKILL.md'}")
     block = fm.group(1)
     name = re.search(r"^name:\s*(.+)$", block, re.M)
-    desc = re.search(r"^description:\s*(.+?)(?=\n\w+:|\Z)", block, re.M | re.S)
+    desc = re.search(r"^description:\s*(.+?)(?=\n[\w-]+:|\Z)", block, re.M | re.S)
     if not (name and desc):
         raise SystemExit("frontmatter needs both name and description")
     return name.group(1).strip(), desc.group(1).strip().strip("'\"")
@@ -84,8 +89,10 @@ def probe(query: str, description: str, model: str, timeout: int,
     """Install a throwaway skill carrying only the description, then see whether the
     agent calls it. The body is inert on purpose: we measure reach, not behaviour."""
     tmp_name = f"zz-trigger-{uuid.uuid4().hex[:8]}"
-    tmp_dir = SKILLS_DIR / tmp_name
     work = Path(tempfile.mkdtemp(prefix="trigger-eval-"))
+    # A project skill of the probe's own cwd: loaded by this session only, and
+    # removed with the directory. See the module docstring for why not ~/.claude.
+    tmp_dir = work / ".claude" / "skills" / tmp_name
     try:
         # Files the query talks about. A measurement skill asked to compare two
         # prompts in an EMPTY directory has nothing to measure, and declining to
@@ -107,8 +114,7 @@ def probe(query: str, description: str, model: str, timeout: int,
             f"# {tmp_name}\n\nAcknowledge that this skill was selected, then stop.\n",
             encoding="utf-8",
         )
-        # CLAUDECODE is dropped so `claude -p` can nest inside a Claude Code session.
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = {k: v for k, v in os.environ.items() if k not in NESTED_SESSION_VARS}
         proc = subprocess.run(
             [*claude_argv(), "-p", query,
              "--output-format", "stream-json",
@@ -138,7 +144,6 @@ def probe(query: str, description: str, model: str, timeout: int,
     except subprocess.TimeoutExpired:
         return False
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
 
 

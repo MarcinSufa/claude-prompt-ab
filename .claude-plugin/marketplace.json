@@ -1,0 +1,20 @@
+{
+  "name": "claude-prompt-ab",
+  "metadata": {
+    "description": "Measure whether an edit to a system prompt or CLAUDE.md actually changed the output, or whether you are looking at randomness."
+  },
+  "owner": {
+    "name": "Marcin Sufa",
+    "email": "sufa.marcin@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "prompt-ab",
+      "description": "A/B harness for prompt-layer changes. Runs one fixed task through each prompt variant headlessly, measures the model noise floor first, counts what changed (visible text, reasoning, tics, em dashes, structure, reference codes) and renders every answer side by side with a prompt diff.",
+      "author": {"name": "Marcin Sufa"},
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/MarcinSufa/claude-prompt-ab"
+    }
+  ]
+}
