@@ -12,8 +12,14 @@ pointing that at the stub from `tests/portability_test.py` makes every model cal
 INSIDE the harness instant and free. One case therefore costs exactly one real
 agent session, not one session plus four measured runs.
 
-    python evals/behavior_eval.py --skill-path . --eval-set evals/evals.json
-    python evals/behavior_eval.py --eval-set evals/evals.json --case 3
+    python3 evals/behavior_eval.py --skill-path . --eval-set evals/evals.json
+    python3 evals/behavior_eval.py --eval-set evals/evals.json --case 3
+
+Which copy of the skill runs: without --skill-path, whatever the CLI already has
+installed. With --skill-path DIR, the session also loads DIR via --plugin-dir (a
+directory holding SKILL.md, with or without .claude-plugin/), so a working copy can
+be evaluated before it is installed. If the skill is installed as well, the agent
+sees both copies; uninstall it first when the two differ.
 
 Each case in the eval set carries prose `expectations` (documentation, for a human
 reading the file) and machine `checks` (what this script asserts). A check is
@@ -127,7 +133,7 @@ def digest(path: Path) -> str | None:
 
 
 def session(prompt: str, work: Path, stub_cmd: str, model: str, timeout: int,
-            permission_mode: str) -> dict:
+            permission_mode: str, skill_path: Path | None = None) -> dict:
     """Run one real agent session over `prompt` and return what it did.
 
     Returns the final answer, every shell command it issued and every skill it
@@ -136,10 +142,11 @@ def session(prompt: str, work: Path, stub_cmd: str, model: str, timeout: int,
     """
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     env["CLAUDE_BIN"] = stub_cmd
+    extra = ["--plugin-dir", str(skill_path)] if skill_path else []
     proc = subprocess.run(
         [*claude_argv(), "-p", prompt,
          "--output-format", "stream-json", "--verbose",
-         "--model", model, "--permission-mode", permission_mode],
+         "--model", model, "--permission-mode", permission_mode, *extra],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         cwd=str(work), env=env, timeout=timeout,
     )
@@ -314,7 +321,7 @@ def run_case(case: dict, stub_cmd: str, args) -> dict:
         if case.get("harness_note") and not args.no_note:
             prompt += "\n\n" + case["harness_note"]
         run = session(prompt, work, stub_cmd, args.model, args.timeout,
-                      args.permission_mode)
+                      args.permission_mode, args.skill_path)
         ctx = {"run": run, "wds": find_workdirs(work, run["commands"]), "work": work,
                "before": before, "fixtures": fixtures, "since": since}
 
@@ -357,7 +364,9 @@ def main() -> int:
             pass
 
     ap = argparse.ArgumentParser(description="Behaviour eval for the prompt-ab skill")
-    ap.add_argument("--skill-path", type=Path, default=REPO)
+    ap.add_argument("--skill-path", type=Path, default=None,
+                    help="load this skill directory into the session (--plugin-dir); "
+                         "default: the copy the CLI already has installed")
     ap.add_argument("--eval-set", type=Path, default=REPO / "evals" / "evals.json")
     ap.add_argument("--case", type=int, action="append",
                     help="run only these case ids (repeatable)")
@@ -376,9 +385,13 @@ def main() -> int:
     if not cases:
         raise SystemExit("no cases selected")
 
+    if args.skill_path:
+        if not (args.skill_path / "SKILL.md").exists():
+            raise SystemExit(f"no SKILL.md in {args.skill_path}")
+        args.skill_path = args.skill_path.resolve()
     bin_dir = Path(tempfile.mkdtemp(prefix="behavior-eval-bin-"))
     stub_cmd = install_stub(bin_dir)
-    print(f"skill: {args.skill_path}")
+    print(f"skill: {args.skill_path or 'installed copy'}")
     print(f"cases: {len(cases)}   inner CLI: stub, no model calls inside the harness\n",
           flush=True)
 

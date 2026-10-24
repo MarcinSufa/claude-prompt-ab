@@ -5,12 +5,13 @@ A/B harness for system prompts.
 One model call per iteration. The baseline is measured once and cached, because
 it does not change while you edit a variant.
 
-Usage:
-    python ab.py run v1                 # run v1 against the cached baseline
-    python ab.py run v1 --repeat 3      # 3 iterations, for a final verdict
-    python ab.py run v1 --force-base    # discard the cached baseline, remeasure
-    python ab.py report                 # rebuild report.md and report.html
-    python ab.py diff v1 v2             # table for the named arms only
+Usage (--workdir goes BEFORE the subcommand, run options after it):
+    python3 ab.py --workdir ./prompt-ab run v1               # v1 against the cached baseline
+    python3 ab.py --workdir ./prompt-ab run v1 --repeat 3    # 3 iterations, for a final verdict
+    python3 ab.py --workdir ./prompt-ab run v1 --force-base  # discard the cached baseline, remeasure
+    python3 ab.py --workdir ./prompt-ab run vanilla          # built-in arm with no CLAUDE.md
+    python3 ab.py --workdir ./prompt-ab report               # rebuild report.md and report.html
+    python3 ab.py --workdir ./prompt-ab diff v1 v2           # table for the named arms only
 
 Workdir layout:
     task.md            user-prompt template, {ARTICLE} is replaced with the input
@@ -62,7 +63,16 @@ VANILLA = "vanilla"
 BASELINE = "baseline"
 # Only the baseline is measured automatically. Vanilla is a diagnostic rather than
 # a candidate you would adopt, so run it explicitly with `run vanilla` when needed.
+# It is built in: no variants/vanilla.md, nothing appended, and the call passes
+# --setting-sources project so neither CLAUDE.md is loaded.
 REFERENCE_ARMS = (BASELINE,)
+BUILTIN_ARMS = (BASELINE, VANILLA)
+
+# Set by a parent Claude Code session. The evals drop the same marker so a nested
+# `claude -p` runs as a plain headless session; ab.py does too, so a measurement
+# started from inside Claude Code sees the environment a measurement started from a
+# terminal sees.
+NESTED_SESSION_VARS = ("CLAUDECODE",)
 
 # Runs execute outside the project tree so no CLAUDE.md sneaks in through the cwd.
 # The directory is namespaced per user: on a shared Linux box a bare
@@ -161,9 +171,10 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
         cmd += ["--append-system-prompt-file", str(sp_file)]
 
     NEUTRAL_CWD.mkdir(parents=True, exist_ok=True)
+    env = {k: v for k, v in os.environ.items() if k not in NESTED_SESSION_VARS}
     started = time.time()
     proc = subprocess.run(
-        cmd, input=prompt, capture_output=True, cwd=str(NEUTRAL_CWD),
+        cmd, input=prompt, capture_output=True, cwd=str(NEUTRAL_CWD), env=env,
         text=True, encoding="utf-8", errors="replace", timeout=timeout,
     )
     wall = time.time() - started
@@ -192,6 +203,11 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
         # The first run of a batch WRITES the cache, later runs read it. Without this
         # field the input looked like 2 tokens, because the article went to cache.
         "cache_write": usage.get("cache_creation_input_tokens"),
+        # What produced the numbers. Arms are only comparable at the same effort,
+        # and a cached baseline outlives the command line that measured it.
+        "model": model,
+        "effort": effort,
+        "setting_sources": "project" if clean else None,
         "metrics": metrics(text),
     }
 
@@ -294,12 +310,22 @@ def table(names: list[str]) -> str:
 def all_variants() -> list[str]:
     if not RUNS.exists():
         return []
-    names = [a for a in REFERENCE_ARMS if (RUNS / a).exists()]
+    names = [a for a in BUILTIN_ARMS if (RUNS / a).exists()]
     names += sorted(
         d.name for d in RUNS.iterdir()
-        if d.is_dir() and d.name not in REFERENCE_ARMS
+        if d.is_dir() and d.name not in BUILTIN_ARMS
     )
     return names
+
+
+def representative(runs: list[dict]) -> tuple[dict, int]:
+    """The run nearest the median visible-text length, and its 1-based position.
+
+    Never the last run: it can be an outlier, and then the answer shown contradicts
+    its own table. One variant had a median of 379 and a last run of 643."""
+    mid = med(runs, "metrics.text_tok") or 0
+    rep = min(runs, key=lambda r: abs(r["metrics"]["text_tok"] - mid))
+    return rep, runs.index(rep) + 1
 
 
 def write_report(names: list[str] | None = None) -> Path:
@@ -309,14 +335,16 @@ def write_report(names: list[str] | None = None) -> Path:
         runs = load_runs(n)
         if not runs:
             continue
-        m = runs[-1]["metrics"]
+        rep, pos = representative(runs)
+        m = rep["metrics"]
         hit = ", ".join(m["tick_list"]) or "none"
         out.append(f"\n### {n}\n")
-        out.append(f"_tics hit: {hit}_\n")
-        out.append("\n```md\n" + runs[-1]["text"].strip() + "\n```\n")
+        which = f"run {pos}/{len(runs)} (nearest the median), " if len(runs) > 1 else ""
+        out.append(f"_{which}tics hit: {hit}_\n")
+        out.append("\n```md\n" + rep["text"].strip() + "\n```\n")
     p = ROOT / "report.md"
     p.write_text("\n".join(out), encoding="utf-8")
-    write_html(names)   # ta sama tresc, ale odpowiedzi wyrenderowane obok siebie
+    write_html(names)   # same content, with the answers rendered side by side
     return p
 
 
@@ -329,8 +357,24 @@ def one(name: str, prompt: str, sp: Path | None, args, clean: bool, i: int, tota
           f"{r['duration_s']}s, em dash {m['em_dash']} -> {path.name}", flush=True)
 
 
+def check_effort(arm: str, effort: str) -> None:
+    """A cached arm measured at another effort is not comparable: the difference
+    would be reasoning, not the prompt. Runs saved before the level was recorded
+    carry no field and cannot be checked."""
+    seen = {r.get("effort") for r in load_runs(arm)} - {None}
+    if seen and seen != {effort}:
+        print(f"WARNING: {arm} was measured at effort {', '.join(sorted(seen))}, "
+              f"this run uses {effort}. Pass the same --effort, or --force-base "
+              f"to remeasure the baseline.", file=sys.stderr, flush=True)
+
+
 def cmd_run(args):
     prompt = build_prompt()
+    if args.variant == VANILLA and (VARIANTS / f"{VANILLA}.md").exists():
+        # The name is taken by the built-in arm. Running the file under it would
+        # label an appended prompt with CLAUDE.md loaded as "no CLAUDE.md at all".
+        raise SystemExit(f"{VARIANTS / VANILLA}.md: 'vanilla' is the built-in "
+                         f"no-CLAUDE.md arm, rename this variant")
 
     # Reference arms are measured once and cached, so editing a variant costs
     # exactly args.repeat model calls.
@@ -346,7 +390,9 @@ def cmd_run(args):
         n = args.ref_repeat
         print(f"{arm}: measuring {n}x (noise floor) ...", flush=True)
         for i in range(n):
-            one(arm, prompt, None, args, clean=(arm == VANILLA), i=i, total=n)
+            one(arm, prompt, None, args, clean=False, i=i, total=n)
+    for arm in REFERENCE_ARMS:
+        check_effort(arm, args.effort)
 
     if args.variant in REFERENCE_ARMS:
         print()
@@ -354,13 +400,20 @@ def cmd_run(args):
         print(f"full answers: {write_report()}")
         return
 
-    sp = VARIANTS / f"{args.variant}.md"
-    if not sp.exists():
-        raise SystemExit(f"missing {sp}")
+    if args.variant == VANILLA:
+        # Nothing appended and --setting-sources project, which cuts both CLAUDE.md
+        # files and also user settings.json. Effort is passed explicitly on this arm
+        # and on the baseline alike, so dropping settings.json cannot shift it.
+        sp, clean = None, True
+    else:
+        sp, clean = VARIANTS / f"{args.variant}.md", False
+        if not sp.exists():
+            raise SystemExit(f"missing {sp}")
 
+    check_effort(args.variant, args.effort)
     print(f"{args.variant}: measuring {args.repeat}x ...", flush=True)
     for i in range(args.repeat):
-        one(args.variant, prompt, sp, args, clean=False, i=i, total=args.repeat)
+        one(args.variant, prompt, sp, args, clean=clean, i=i, total=args.repeat)
 
     print()
     print(table([*REFERENCE_ARMS, args.variant]))
@@ -382,8 +435,10 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="run a variant against the cached baseline")
-    r.add_argument("variant")
-    r.add_argument("--repeat", type=int, default=1)
+    r.add_argument("variant", help="a file under variants/ without .md, or the "
+                                   "built-in 'vanilla' (no CLAUDE.md) or 'baseline'")
+    r.add_argument("--repeat", type=int, default=1,
+                   help="iterations of the variant (or of vanilla)")
     r.add_argument("--ref-repeat", type=int, default=3,
                    help="baseline repeats; this sets the noise floor")
     r.add_argument("--model", default="opus")
@@ -653,9 +708,9 @@ def _diff_panel(names: list[str]) -> str:
     data = {}
     for n in names:
         sp = VARIANTS / f"{n}.md"
-        if sp.exists():
+        if sp.exists() and n not in BUILTIN_ARMS:
             data[n] = read(sp).strip()
-        elif n in REFERENCE_ARMS or n == VANILLA:
+        elif n in BUILTIN_ARMS:
             # Reference arms have no file, but they MUST be listed: diffing an empty
             # append against a variant shows exactly what that variant adds to the
             # setup you already have, which is the usual question.
@@ -689,22 +744,19 @@ def write_html(names: list[str] | None = None) -> Path:
         if not runs:
             continue
         # Show the REPRESENTATIVE run, the one nearest the median, not the last one.
-        # The last run can be an outlier, and then the card contradicts its own
-        # table: one variant had a median of 379 and a last run of 643.
-        mid = med(runs, "metrics.text_tok") or 0
-        last = min(runs, key=lambda r: abs(r["metrics"]["text_tok"] - mid))
+        last, pos = representative(runs)
         m = last["metrics"]
-        pos = runs.index(last) + 1
 
         sp = VARIANTS / f"{n}.md"
-        if sp.exists():
+        if n == VANILLA:
+            # Checked before any file: the built-in arm never appends one.
+            prompt_block = _details("system prompt: NONE, CLAUDE.md cut as well",
+                                    [("", "--setting-sources project")])
+        elif sp.exists():
             body = read(sp).strip()
             prompt_block = _details(
                 f"system prompt: variants/{n}.md ({len(body):,} chars, ~{len(body)//4} tok)",
                 [("", body)])
-        elif n == VANILLA:
-            prompt_block = _details("system prompt: NONE, CLAUDE.md cut as well",
-                                    [("", "--setting-sources project")])
         else:
             prompt_block = _details("system prompt: nothing appended, your CLAUDE.md only",
                                     [("", "(reference arm)")])
