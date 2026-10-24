@@ -34,22 +34,27 @@ Both load the same root `SKILL.md`: the plugin manifest points its skills at the
 ## Quick start
 
 ```bash
+# the skill directory: this is the git clone; for the plugin, `claude plugin list` shows where it lives
+SKILL=~/.claude/skills/prompt-ab
+
 # 1. create the workdir skeleton
-python ~/.claude/skills/prompt-ab/scripts/ab.py --workdir ./prompt-ab report
+python3 "$SKILL/scripts/ab.py" --workdir ./prompt-ab report
 
 # 2. put your input in prompt-ab/article.md, and a task in prompt-ab/task.md
 #    task.md holds the user prompt with {ARTICLE} where the input goes
 
 # 3. write the prompt you want to test
-cp ~/.claude/skills/prompt-ab/templates/example-variant.md ./prompt-ab/variants/v1.md
+cp "$SKILL/templates/example-variant.md" ./prompt-ab/variants/v1.md
 
 # 4. measure: baseline three times to set the noise floor, v1 once
-python ~/.claude/skills/prompt-ab/scripts/ab.py --workdir ./prompt-ab run v1 --ref-repeat 3
+python3 "$SKILL/scripts/ab.py" --workdir ./prompt-ab run v1 --ref-repeat 3
 
 # 5. open ./prompt-ab/report.html
 ```
 
-Or just ask Claude Code: *"A/B this system prompt change"*, and the skill triggers on its own.
+`--workdir` goes before the subcommand; `--effort`, `--model`, `--timeout` and the repeat options go after `run`. On Windows use `python` or `py -3` in place of `python3`.
+
+Or just ask Claude Code: *"A/B this system prompt change"* (or *"przetestuj ten prompt A/B"*), and the skill triggers on its own.
 
 ## What you get
 
@@ -61,7 +66,7 @@ Or just ask Claude Code: *"A/B this system prompt change"*, and the skill trigge
 | v2       | 3 |      379 | 350..643 |        -37% |      186 |       0 |    0 |         5 | 13.8s |
 ```
 
-Read the `spread` column first. It is the baseline min..max, the noise floor. A variant inside that band is indistinguishable from randomness, no matter how good the percentage looks.
+Read the `spread` column first. Each row shows that arm's own min..max; the **baseline row** is the noise floor. A variant whose median falls inside the baseline's band is indistinguishable from randomness, no matter how good the percentage looks. A variant's own band shows how stable it is: `v2` above swings from 350 to 643.
 
 `report.html` carries the same table plus every answer rendered side by side, in light and dark:
 
@@ -76,7 +81,7 @@ Read the `spread` column first. It is the baseline min..max, the noise floor. A 
 |---|---|
 | `baseline` | Your current setup: global and project `CLAUDE.md`, nothing appended. Measured once, cached, reused across iterations. |
 | `<variant>` | The same setup plus `variants/<name>.md`, appended with `--append-system-prompt-file`. Variants add; they never replace. |
-| `vanilla` | A bare agent with no `CLAUDE.md` at all. A diagnostic, not a candidate. Run it explicitly. |
+| `vanilla` | A bare agent with no `CLAUDE.md` at all: nothing appended, `--setting-sources project`, the same explicit `--effort` as the baseline. Built in, so it needs no variant file. A diagnostic, not a candidate. Run it explicitly. |
 
 Because the baseline is cached, iterating on a prompt costs one model call per round, not a full sweep.
 
@@ -89,21 +94,22 @@ Because the baseline is cached, iterating on a prompt costs one model call per r
 | `run <variant> --ref-repeat N` | N iterations of the baseline; this sets the noise floor |
 | `run <variant> --force-base` | Discard the cached baseline and remeasure |
 | `run <variant> --with-skills` | Leave skills enabled: measures real conditions, not the prompt alone |
-| `run vanilla` | The no-`CLAUDE.md` diagnostic arm |
+| `run vanilla` | The no-`CLAUDE.md` diagnostic arm, `--repeat` times |
 | `diff <a> <b> ...` | Table for the named arms only |
 | `report [names...]` | Rebuild `report.md` and `report.html` |
-| `--workdir PATH` | Working directory, default `./prompt-ab` |
-| `--effort LEVEL` | `low`/`medium`/`high`/`xhigh`/`max`, pinned on every arm |
-| `--model NAME` | Default `opus` |
+| `--workdir PATH` | Working directory, default `./prompt-ab`. Before the subcommand |
+| `--effort LEVEL` | `low`/`medium`/`high`/`xhigh`/`max`, default `medium`, pinned on every arm. After `run` |
+| `--model NAME` | Default `opus`. After `run` |
+| `--timeout SECONDS` | Per call, default 600. After `run` |
 
 ## Metrics
 
 | Column | Meaning |
 |---|---|
 | `text tok` | Estimated tokens of visible answer text |
-| `spread` | Baseline min..max: the noise floor. Read this before any delta. |
+| `spread` | That arm's min..max. The baseline row is the noise floor: read it before any delta. |
 | `vs baseline` | Change in visible text against your current setup |
-| `thinking` | Total output tokens minus visible text, so reasoning |
+| `thinking` | Total output tokens minus estimated visible text, so roughly reasoning (an estimate; it can dip slightly below zero on short answers) |
 | `em dash`, `tics` | Style counters. Tics discount quoted and backticked spans, because a model writing *about* a banned phrase is not using it. |
 | `ref codes` | Distinct `F1`/`D1`/`R1`-style codes the answer emitted |
 
@@ -112,14 +118,14 @@ Because the baseline is cached, iterating on a prompt costs one model call per r
 The skill exists because a session set out to adopt a well-argued prompt technique and measured the opposite of the claim. Every item below cost a real round of work.
 
 1. **Pin `--effort` on every arm.** One setup produced 1600 tokens of reasoning at `xhigh` against 384 at the default, while emitting *less* visible text. If arms differ in effort, you are measuring reasoning and calling it style.
-2. **Cutting `CLAUDE.md` also cuts `settings.json`.** `--setting-sources project` removes both, so a "vanilla" arm silently differs from "baseline" in two variables, not one. That comparison explains nothing.
+2. **Cutting `CLAUDE.md` also cuts `settings.json`.** `--setting-sources project` removes both, so a "vanilla" arm silently differs from "baseline" in two variables, not one. That comparison explains nothing unless effort is pinned on both, which is why `run vanilla` passes the same explicit `--effort` and every run records the level it used.
 3. **`output_tokens` is not answer length.** It bundles reasoning. A variant can cut visible text while raising the total.
 4. **Recompute metrics from the stored text.** Never read them back from the stored JSON, and redefining a metric reapplies to every historical run for free.
 5. **The input must not be about the thing you are measuring.** A tic counter run over an article discussing those tics counts the topic, not the style.
 6. **Negative rules are weak.** A `NEVER use X` rule sat loaded in context and was violated five times inside one answer. Rewrite each prohibition as an instruction naming the substitute. Then check the file itself: an instruction file that demonstrates the behaviour it forbids is teaching by example, and example beats instruction.
 7. **Tic lists do not transfer between models.** Harvest them from that model's own output rather than copying someone else's list.
 8. **Disabling skills is not neutral.** It isolates the prompt, but the baseline you measure is then not the baseline you work in. `--with-skills` exists for exactly that reason: in one measurement a variant gained 37% with skills off and 22% with them on.
-9. **Report the run nearest the median, never the last one.** A report card showing the last run contradicted its own table: median 379, last run 643.
+9. **Report the run nearest the median, never the last one.** A report card showing the last run contradicted its own table: median 379, last run 643. Both `report.html` and `report.md` now show the median run and say which one it is.
 10. **A rule that fires half the time is not a rule.** A reference-point instruction fired in one run of three under one wording and two of three under another. Sample before believing.
 
 ## Evals
@@ -135,8 +141,10 @@ passed 9/12
 It never fires on the wrong request, and fires on half the right ones. The three misses are the vaguest phrasings, the ones with no artifact in the working directory to compare.
 
 ```bash
-python evals/trigger_eval.py --skill-path . --eval-set evals/trigger-set.json --runs 3
+python3 evals/trigger_eval.py --skill-path . --eval-set evals/trigger-set.json --runs 3
 ```
+
+Each probe installs a throwaway copy of the description as a project skill in its own temporary working directory, so nothing is written to `~/.claude/skills` and a killed run leaves no stray skill behind. (A temporary `HOME` or `CLAUDE_CONFIG_DIR` would also keep it out, but then the CLI finds no login and every probe fails.)
 
 The script exists because the one shipped with `skill-creator` could not produce a non-zero number here. Three separate defects had to be cleared before any figure meant anything, and all three are the same class of mistake:
 
@@ -151,8 +159,9 @@ Each was caught by a positive control rather than by reading the code: give the 
 `evals/evals.json` describes the behaviour a correct run should produce, and `evals/behavior_eval.py` executes it:
 
 ```bash
-python evals/behavior_eval.py                  # all cases
-python evals/behavior_eval.py --case 3         # one case
+python3 evals/behavior_eval.py                  # all cases, the installed copy of the skill
+python3 evals/behavior_eval.py --case 3         # one case
+python3 evals/behavior_eval.py --skill-path .   # load this checkout via --plugin-dir
 ```
 
 Each case runs one real agent session over the case prompt. The model calls made *inside* the harness go to a stub, so a case costs one session rather than a session plus a full measurement. Nothing is graded by a model: every check reads the transcript (which flags the agent passed, which skill it invoked) or the tree it left behind (how many runs landed under each arm, whether a variant file was written, whether any `CLAUDE.md` changed). Where a case's prose expectation has no matching check, it is documented but not measured, and the output says so by printing checks against expectations.
@@ -170,7 +179,7 @@ A case may also carry a `harness_note`, appended to its prompt. It exists becaus
 
 Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude` CLI. No third-party packages.
 
-`tests/portability_test.py` runs the whole harness against a stub CLI, so it exercises the real code path, subprocess call included, without spending a token:
+`tests/portability_test.py` runs the whole harness against a stub CLI, so it exercises the real code path, subprocess call included, without spending a token. The rows below up to 2026-08 were recorded with the 14-check suite; it now has 22 checks (added: `run vanilla` flags and effort, the median run in `report.md`, `CLAUDECODE` not leaking to the child, the trigger eval staying out of the user config, `behavior_eval --skill-path`):
 
 | Platform | Python | Result | Where |
 |---|---|---|---|
@@ -179,11 +188,12 @@ Requires **Python 3.10+** (the code uses `X | None` annotations) and the `claude
 | macOS (Darwin 25.5, arm64) | 3.10.11, 3.13.14 | 14/14 pass | CI |
 | Ubuntu 24.04 | 3.10.20, 3.13.15 | 14/14 pass | CI |
 | Windows Server 2025 | 3.10.11, 3.13.15 | 14/14 pass | CI |
+| Linux 6.8 (Ubuntu 24.04) | 3.12.3 | 22/22 pass | local, 2026-10-24 |
 
 macOS was untested for a while because no machine was available. It is now covered by `.github/workflows/portability.yml`, which runs the suite on all three operating systems at both ends of the supported Python range on every push. The suite needs no API key and no `claude` binary, which is what makes it runnable in CI at all.
 
 ```bash
-python tests/portability_test.py
+python3 tests/portability_test.py
 ```
 
 ### CLAUDE_BIN
@@ -191,8 +201,8 @@ python tests/portability_test.py
 Set `CLAUDE_BIN` to point at a specific CLI, as a bare name, a path, or a full command:
 
 ```bash
-CLAUDE_BIN="/opt/homebrew/bin/claude" python scripts/ab.py run v1
-CLAUDE_BIN="npx claude" python scripts/ab.py run v1
+CLAUDE_BIN="/opt/homebrew/bin/claude" python3 scripts/ab.py run v1
+CLAUDE_BIN="npx claude" python3 scripts/ab.py run v1
 ```
 
 This is not decoration. On Windows `subprocess` resolves a bare command name through the **parent** process environment, so prepending a directory to the child's `PATH` redirects nothing, and an explicit binary is the only reliable way to aim the harness at a different CLI. The portability test depends on it.
