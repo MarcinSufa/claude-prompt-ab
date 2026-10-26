@@ -33,7 +33,7 @@ So the harness always measures a noise floor before it reports a difference.
 
    The task must exercise the rules being tested. A summarize-an-article task measures verbosity and nothing else; it will not tell you whether an alias, a decision-format rule, or a scope boundary works. Match the task to the rule.
 
-3. **Write `variants/<name>.md`.** Each file is appended via `--append-system-prompt-file`, on top of whatever `CLAUDE.md` is already loaded. Variants add; they never replace.
+3. **Write `variants/<name>.md`.** Each file is appended via `--append-system-prompt-file`, on top of whatever `CLAUDE.md` is already loaded. Variants add; they never replace. To test an output style, write `variants/<name>.settings.json` (e.g. `{"outputStyle": "Learning"}`) instead or alongside: it is passed with `--settings`, because a style replaces part of the base prompt and cannot be appended.
 
 4. **Run.** Baseline (no appended file) is computed once with repeats and cached. Each variant costs one call per iteration. Every call is a real `claude -p` run: it spends the user's quota.
 

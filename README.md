@@ -80,7 +80,7 @@ Read the `spread` column first. Each row shows that arm's own min..max; the **ba
 | Arm | What it is |
 |---|---|
 | `baseline` | Your current setup: global and project `CLAUDE.md`, nothing appended. Measured once, cached, reused across iterations. |
-| `<variant>` | The same setup plus `variants/<name>.md`, appended with `--append-system-prompt-file`. Variants add; they never replace. |
+| `<variant>` | The same setup plus `variants/<name>.md`, appended with `--append-system-prompt-file`, and/or `variants/<name>.settings.json`, passed with `--settings` (use it for an output style: a style replaces part of the base prompt, so appending its text would measure something else). Variants add; they never replace. |
 | `vanilla` | A bare agent with no `CLAUDE.md` at all: nothing appended, `--setting-sources project`, the same explicit `--effort` as the baseline. Built in, so it needs no variant file. A diagnostic, not a candidate. Run it explicitly. |
 
 Because the baseline is cached, iterating on a prompt costs one model call per round, not a full sweep.
