@@ -145,7 +145,8 @@ def metrics(text: str) -> dict:
 
 
 def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
-           clean: bool = False, effort: str = "medium", skills: bool = False) -> dict:
+           clean: bool = False, effort: str = "medium", skills: bool = False,
+           settings_file: Path | None = None) -> dict:
     cmd = [
         *claude_argv(), "-p",
         "--model", model,
@@ -169,6 +170,12 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
         cmd += ["--setting-sources", "project"]
     if sp_file is not None:
         cmd += ["--append-system-prompt-file", str(sp_file)]
+    if settings_file is not None:
+        # An output style is not an appended prompt: it REPLACES part of the base
+        # system prompt, so it can only be measured through settings. Verified by
+        # probe: with {"outputStyle":"Learning"} the agent answers YES to a question
+        # about that style's instructions, without it, NO.
+        cmd += ["--settings", str(settings_file)]
 
     NEUTRAL_CWD.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if k not in NESTED_SESSION_VARS}
@@ -210,6 +217,14 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
         "setting_sources": "project" if clean else None,
         "metrics": metrics(text),
     }
+
+
+def variant_files(name: str) -> tuple[Path | None, Path | None]:
+    """A variant is <name>.md (appended prompt), <name>.settings.json (settings,
+    e.g. an output style), or both. At least one must exist."""
+    sp = VARIANTS / f"{name}.md"
+    st = VARIANTS / f"{name}.settings.json"
+    return (sp if sp.exists() else None, st if st.exists() else None)
 
 
 def variant_dir(name: str) -> Path:
@@ -348,9 +363,10 @@ def write_report(names: list[str] | None = None) -> Path:
     return p
 
 
-def one(name: str, prompt: str, sp: Path | None, args, clean: bool, i: int, total: int):
+def one(name: str, prompt: str, sp: Path | None, args, clean: bool, i: int, total: int,
+        st: Path | None = None):
     r = invoke(prompt, sp, args.model, args.timeout, clean=clean,
-               effort=args.effort, skills=args.with_skills)
+               effort=args.effort, skills=args.with_skills, settings_file=st)
     path = save_run(name, r)
     m = r["metrics"]
     print(f"  {name} {i+1}/{total}: text {m['text_tok']} tok, out {r['out_tok']} tok, "
@@ -404,16 +420,19 @@ def cmd_run(args):
         # Nothing appended and --setting-sources project, which cuts both CLAUDE.md
         # files and also user settings.json. Effort is passed explicitly on this arm
         # and on the baseline alike, so dropping settings.json cannot shift it.
-        sp, clean = None, True
+        sp, st, clean = None, None, True
     else:
-        sp, clean = VARIANTS / f"{args.variant}.md", False
-        if not sp.exists():
-            raise SystemExit(f"missing {sp}")
+        sp, st = variant_files(args.variant)
+        clean = False
+        if sp is None and st is None:
+            raise SystemExit(
+                f"missing {VARIANTS / (args.variant + '.md')} "
+                f"and {VARIANTS / (args.variant + '.settings.json')}")
 
     check_effort(args.variant, args.effort)
     print(f"{args.variant}: measuring {args.repeat}x ...", flush=True)
     for i in range(args.repeat):
-        one(args.variant, prompt, sp, args, clean=clean, i=i, total=args.repeat)
+        one(args.variant, prompt, sp, args, clean=clean, i=i, total=args.repeat, st=st)
 
     print()
     print(table([*REFERENCE_ARMS, args.variant]))
@@ -707,9 +726,10 @@ def _diff_panel(names: list[str]) -> str:
     says WHAT changed in the prompt itself."""
     data = {}
     for n in names:
-        sp = VARIANTS / f"{n}.md"
-        if sp.exists() and n not in BUILTIN_ARMS:
-            data[n] = read(sp).strip()
+        sp, st = variant_files(n)
+        if (sp is not None or st is not None) and n not in BUILTIN_ARMS:
+            data[n] = "\n\n".join(
+                read(f).strip() for f in (sp, st) if f is not None)
         elif n in BUILTIN_ARMS:
             # Reference arms have no file, but they MUST be listed: diffing an empty
             # append against a variant shows exactly what that variant adds to the
@@ -747,16 +767,21 @@ def write_html(names: list[str] | None = None) -> Path:
         last, pos = representative(runs)
         m = last["metrics"]
 
-        sp = VARIANTS / f"{n}.md"
+        sp, st = variant_files(n)
         if n == VANILLA:
             # Checked before any file: the built-in arm never appends one.
             prompt_block = _details("system prompt: NONE, CLAUDE.md cut as well",
                                     [("", "--setting-sources project")])
-        elif sp.exists():
-            body = read(sp).strip()
-            prompt_block = _details(
-                f"system prompt: variants/{n}.md ({len(body):,} chars, ~{len(body)//4} tok)",
-                [("", body)])
+        elif sp is not None or st is not None:
+            parts, labels = [], []
+            if sp is not None:
+                body = read(sp).strip()
+                labels.append(f"variants/{n}.md ({len(body):,} chars, ~{len(body)//4} tok)")
+                parts.append(("appended system prompt", body))
+            if st is not None:
+                labels.append(f"variants/{n}.settings.json")
+                parts.append(("settings (--settings)", read(st).strip()))
+            prompt_block = _details("applied: " + " + ".join(labels), parts)
         else:
             prompt_block = _details("system prompt: nothing appended, your CLAUDE.md only",
                                     [("", "(reference arm)")])
