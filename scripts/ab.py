@@ -17,7 +17,7 @@ Workdir layout:
     task.md            user-prompt template, {ARTICLE} is replaced with the input
     article.md         the input text
     variants/v1.md     appended via --append-system-prompt-file
-    runs/<arm>/        raw results: NNN.json + NNN.md
+    runs/<arm>/        raw results: NNN.json (all_text = every text block) + NNN.md (final answer)
     report.md          table plus every answer as source
     report.html        the same, rendered side by side
 """
@@ -77,7 +77,8 @@ NESTED_SESSION_VARS = ("CLAUDECODE",)
 # Runs execute outside the project tree so no CLAUDE.md sneaks in through the cwd.
 # The directory is namespaced per user: on a shared Linux box a bare
 # /tmp/prompt-ab-cwd owned by someone else fails with a permission error.
-NEUTRAL_CWD = Path(tempfile.gettempdir()) / f"prompt-ab-cwd-{getpass.getuser()}"
+NEUTRAL_CWD = Path(os.environ.get("PROMPT_AB_CWD")
+                   or Path(tempfile.gettempdir()) / f"prompt-ab-cwd-{getpass.getuser()}")
 
 # Tic phrases. A hit means the system prompt failed to suppress them.
 TICKS = [
@@ -150,7 +151,9 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
     cmd = [
         *claude_argv(), "-p",
         "--model", model,
-        "--output-format", "json",
+        # stream-json, not json: json returns only the final message, so text the
+        # agent prints before its first tool call (a plan, a rewritten prompt) was lost.
+        "--output-format", "stream-json", "--verbose",
         # MCP is always off: otherwise you measure server instructions, not your prompt.
         "--strict-mcp-config",
         # Effort is pinned EXPLICITLY on every arm. Without it, an arm that drops user
@@ -192,15 +195,27 @@ def invoke(prompt: str, sp_file: Path | None, model: str, timeout: int,
             f"stderr: {proc.stderr[:2000]}"
         )
 
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        raise SystemExit(f"stdout was not JSON:\n{proc.stdout[:2000]}")
+    payload, parts = None, []
+    for line in proc.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "result":
+            payload = event
+        elif event.get("type") == "assistant":
+            parts += [b["text"] for b in event.get("message", {}).get("content", [])
+                      if b.get("type") == "text" and b.get("text")]
+    if payload is None:
+        raise SystemExit(f"no result event in stdout:\n{proc.stdout[:2000]}")
 
     text = payload.get("result", "")
     usage = payload.get("usage", {}) or {}
     return {
         "text": text,
+        # Every text block the agent wrote, in order. Metrics stay on the final
+        # answer, so runs remain comparable with baselines measured before this field.
+        "all_text": "\n\n".join(parts),
         "wall_s": round(wall, 1),
         "duration_s": round(payload.get("duration_ms", 0) / 1000, 1),
         "cost_usd": payload.get("total_cost_usd"),
@@ -423,7 +438,7 @@ def cmd_run(args):
         sp, st, clean = None, None, True
     else:
         sp, st = variant_files(args.variant)
-        clean = False
+        clean = args.no_claude_md
         if sp is None and st is None:
             raise SystemExit(
                 f"missing {VARIANTS / (args.variant + '.md')} "
@@ -467,6 +482,8 @@ def main():
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--with-skills", action="store_true",
                    help="leave skills enabled; measures real working conditions, not the prompt alone")
+    r.add_argument("--no-claude-md", action="store_true",
+                   help="cut the loaded CLAUDE.md on the variant arm, so a variant can be a whole CLAUDE.md")
     r.add_argument("--force-base", action="store_true")
     r.set_defaults(func=cmd_run)
 

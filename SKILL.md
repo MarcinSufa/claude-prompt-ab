@@ -86,6 +86,7 @@ These are the reason this skill exists. The script is replaceable; this list is 
 | `run <variant> --ref-repeat N` | N iterations of baseline; this sets the noise floor |
 | `run <variant> --force-base` | Discards the cached baseline and recomputes |
 | `run <variant> --with-skills` | Leaves skills enabled: real working conditions, not the prompt alone |
+| `run <variant> --no-claude-md` | Cuts the loaded `CLAUDE.md` on the variant arm too, so a variant file can be a whole `CLAUDE.md` compared against the real one |
 | `run vanilla` | Built-in reference arm with no `CLAUDE.md` at all, for diagnosis. Needs no variant file; runs `--repeat` times with `--setting-sources project` and nothing appended |
 | `diff <a> <b> ...` | Table for the named arms only |
 | `report [names...]` | Rebuilds `report.md` and `report.html` |
