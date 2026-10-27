@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end check that the harness runs on this platform, without calling a model.
 
-A stub CLI answers in the two shapes the code consumes: the single JSON object
-that `--output-format json` returns, and the stream-json lines the trigger eval
-reads. Everything else is the real code path, including the subprocess call, the
+A stub CLI answers in the stream-json lines the arm runs and the evals read.
+Everything else is the real code path, including the subprocess call, the
 workdir skeleton, metric computation, both reports and cleanup.
 
     python3 tests/portability_test.py
@@ -40,7 +39,7 @@ if log:
         f.write(json.dumps({"argv": argv, "claudecode": "CLAUDECODE" in os.environ}) + "\\n")
     with open(log, encoding="utf-8") as f:
         call = sum(1 for _ in f)
-if "stream-json" in argv:
+if "stream-json" in argv and "--strict-mcp-config" not in argv:
     # The trigger eval installs exactly one throwaway skill, as a project skill of
     # the cwd it starts us in. One left in the user config would not count.
     root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
@@ -58,8 +57,15 @@ else:
     if call:
         # Calls 1, 2, 3 of a log: middle, longest, shortest.
         text += "\\nRUN-%d\\n" % call + "x" * (400, 1200, 0)[(call - 1) % 3]
+    # An arm run: text printed before a tool call, then the final answer. The
+    # result event carries only the final answer.
+    print(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "PREAMBLE before any tool call"},
+        {"type": "tool_use", "name": "Read", "input": {}}]}}))
+    print(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": text}]}}))
     print(json.dumps({
-        "result": text,
+        "type": "result", "result": text,
         "duration_ms": 1234, "total_cost_usd": 0.01,
         "usage": {"input_tokens": 2, "output_tokens": 180,
                   "cache_read_input_tokens": 900, "cache_creation_input_tokens": 0}}))
@@ -130,6 +136,11 @@ def main() -> int:
         r = run(ab + ["run", "v1", "--ref-repeat", "2", "--repeat", "1"], env, REPO)
         check("run through subprocess", r.returncode == 0 and "| v1 |" in r.stdout, r.stdout + r.stderr)
         check("runs persisted", len(list((work / "runs" / "baseline").glob("*.json"))) == 2)
+        first = json.loads((work / "runs" / "v1" / "001.json").read_text(encoding="utf-8"))
+        check("all assistant text kept, not only the result",
+              first.get("all_text", "").startswith("PREAMBLE before any tool call")
+              and "F1 The pool" in first.get("all_text", "")
+              and "PREAMBLE" not in first.get("text", ""), json.dumps(first)[:600])
 
         html = (work / "report.html").read_text(encoding="utf-8") if (work / "report.html").exists() else ""
         for label, ok in [

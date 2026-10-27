@@ -94,6 +94,7 @@ Because the baseline is cached, iterating on a prompt costs one model call per r
 | `run <variant> --ref-repeat N` | N iterations of the baseline; this sets the noise floor |
 | `run <variant> --force-base` | Discard the cached baseline and remeasure |
 | `run <variant> --with-skills` | Leave skills enabled: measures real conditions, not the prompt alone |
+| `run <variant> --no-claude-md` | Cut the loaded `CLAUDE.md` on the variant arm too, so a variant file can be a whole `CLAUDE.md` compared against the real one |
 | `run vanilla` | The no-`CLAUDE.md` diagnostic arm, `--repeat` times |
 | `diff <a> <b> ...` | Table for the named arms only |
 | `report [names...]` | Rebuild `report.md` and `report.html` |
